@@ -56,7 +56,7 @@ Example:
 
 Unavailable information is represented using JSON `null`.
 
-For example:
+Example:
 
 ```json
 {
@@ -78,22 +78,51 @@ A value such as `0` must not be used to represent unavailable data if `0` has an
 
 ---
 
-## 4. Search for Carparks
+# 4. Search for Carparks
 
-### POST `/api/search`
+## POST `/api/search`
 
 Searches for eligible carparks within 1 km of the selected destination and ranks them according to the user's preferences.
 
 ### Request Body
 
+The user must provide an arrival time and either:
+
+- `departureTime`, or
+- `durationMinutes`.
+
+Exactly one of `departureTime` and `durationMinutes` should normally be provided.
+
+Example using parking duration:
+
 ```json
 {
   "destination": "Nanyang Technological University",
   "arrivalTime": "2026-10-09T14:00:00+08:00",
+  "departureTime": null,
   "durationMinutes": 180,
   "preferences": {
     "pricePriority": 1,
-    "walkingDistancePriority": 2,
+    "walkingTimePriority": 2,
+    "availabilityPriority": 3,
+    "lotType": "CAR",
+    "carparkType": null,
+    "evChargingRequired": false
+  }
+}
+```
+
+Example using departure time:
+
+```json
+{
+  "destination": "Nanyang Technological University",
+  "arrivalTime": "2026-10-09T14:00:00+08:00",
+  "departureTime": "2026-10-09T17:00:00+08:00",
+  "durationMinutes": null,
+  "preferences": {
+    "pricePriority": 1,
+    "walkingTimePriority": 2,
     "availabilityPriority": 3,
     "lotType": "CAR",
     "carparkType": null,
@@ -108,15 +137,22 @@ Searches for eligible carparks within 1 km of the selected destination and ranks
 |---|---|---|---|
 | `destination` | string | Yes | Destination entered or selected by the user |
 | `arrivalTime` | string | Yes | Expected arrival time in ISO 8601 format |
-| `durationMinutes` | integer | Yes | Expected parking duration in minutes |
+| `departureTime` | string or null | Conditional | Expected departure time |
+| `durationMinutes` | integer or null | Conditional | Expected parking duration in minutes |
 | `preferences` | object | Yes | User's ranking and filtering preferences |
+
+The request must provide sufficient information to determine the parking period.
+
+If `departureTime` is not supplied, `durationMinutes` must be supplied.
+
+If `durationMinutes` is not supplied, `departureTime` must be supplied.
 
 ### Preference Fields
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `pricePriority` | integer | Yes | Priority assigned to parking price |
-| `walkingDistancePriority` | integer | Yes | Priority assigned to walking distance/time |
+| `walkingTimePriority` | integer | Yes | Priority assigned to walking time |
 | `availabilityPriority` | integer | Yes | Priority assigned to parking availability |
 | `lotType` | string | Yes | Required vehicle lot type |
 | `carparkType` | string or null | No | Optional carpark type filter |
@@ -160,7 +196,7 @@ The three priority values must be unique.
         "lastUpdated": "2026-10-09T13:58:00+08:00",
         "isStale": false
       },
-      "predictedBusyness": {
+      "expectedBusyness": {
         "occupancyPercentage": 68,
         "level": "MODERATE"
       },
@@ -190,9 +226,9 @@ The `results` array is ordered from the highest-ranked to the lowest-ranked carp
 | `lotType` | string | Vehicle lot category |
 | `walkingDistanceM` | integer or null | Walking distance from carpark to destination |
 | `walkingTimeMin` | integer or null | Estimated walking time to destination |
-| `estimatedFeeSgd` | number or null | Estimated parking fee for the requested duration |
+| `estimatedFeeSgd` | number or null | Estimated parking fee for the requested parking period |
 | `availability` | object or null | Current live parking availability |
-| `predictedBusyness` | object or null | Predicted busyness at expected arrival time |
+| `expectedBusyness` | object or null | Expected busyness at the user's arrival time |
 | `evCharging` | object | EV charging information |
 | `compositeScore` | number | Score used for recommendation ranking |
 
@@ -223,9 +259,9 @@ If live availability information is unavailable:
 
 ---
 
-## 6. Predicted Busyness
+## 6. Expected Busyness
 
-Predicted busyness uses the following format:
+Expected busyness uses the following format:
 
 ```json
 {
@@ -240,15 +276,17 @@ The allowed busyness levels are:
 - `MODERATE`
 - `HIGH`
 
-If there is insufficient historical data to generate a prediction:
+If there is insufficient historical data to generate an estimate:
 
 ```json
 {
-  "predictedBusyness": null
+  "expectedBusyness": null
 }
 ```
 
-Predicted busyness represents an estimate based on historical availability data and does not guarantee future availability.
+Expected busyness represents an estimate based on historical availability records for similar days and times.
+
+It does not guarantee future availability and is not treated as a formal prediction model.
 
 ---
 
@@ -327,6 +365,10 @@ Example request:
     "totalLots": 100,
     "lastUpdated": "2026-10-09T13:58:00+08:00",
     "isStale": false
+  },
+  "expectedBusyness": {
+    "occupancyPercentage": 68,
+    "level": "MODERATE"
   },
   "evCharging": {
     "supported": true,
@@ -417,7 +459,7 @@ Initial standard values:
 
 The final supported values should correspond to the lot types supported by the application.
 
-### Predicted Busyness Level
+### Expected Busyness Level
 
 - `LOW`
 - `MODERATE`
@@ -440,7 +482,9 @@ The frontend must not depend on the original response formats used by the extern
 Used for:
 
 - Destination geocoding
-- Walking route, distance, and time
+- Walking route
+- Walking distance
+- Walking time
 
 ### HDB / data.gov.sg
 
@@ -475,11 +519,11 @@ The following are internal backend responsibilities and are not exposed as separ
 - Walking time and distance estimation
 - Parking fee calculation
 - Live availability retrieval
-- Availability prediction
+- Expected busyness estimation
 - EV charging data retrieval
 - Recommendation and ranking
 - Historical availability collection
 
 The Historical Availability Collector periodically retrieves supported live availability data and stores historical records in MySQL.
 
-Therefore, separate public endpoints such as `/api/predict`, `/api/calculate-fee`, or `/api/historical-availability` are not required.
+Therefore, separate public endpoints such as `/api/estimate-busyness`, `/api/calculate-fee`, or `/api/historical-availability` are not required.
