@@ -74,10 +74,15 @@ def fetch_carpark_info_records(page_size: int = 500) -> list[dict]:
                 return records
 
 
-def fetch_availability() -> dict:
-    """Raw response of the live carpark availability API."""
+def fetch_availability(at: Optional[datetime] = None) -> dict:
+    """Raw response of the carpark availability API: live, or the snapshot
+    at (or just before) `at` if given (the API keeps history)."""
+    params = None
+    if at is not None:
+        at_sgt = at.astimezone(SGT) if at.tzinfo else at
+        params = {"date_time": at_sgt.strftime("%Y-%m-%dT%H:%M:%S")}
     with httpx.Client(timeout=TIMEOUT) as client:
-        return _get_json(client, AVAILABILITY_URL)
+        return _get_json(client, AVAILABILITY_URL, params)
 
 
 # ---------------------------------------------------------------- CSV snapshot (fallback for demo day)

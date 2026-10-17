@@ -15,6 +15,7 @@ backend/
     session.py          # connection; reads DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD from .env
   collector/
     poller.py           # HistoricalAvailabilityCollector: polls HDB availability every 10 min
+    backfill.py         # fills past weeks of history from the API's snapshots
     load_carparks.py    # loads ~2,300 HDB carparks from data.gov.sg
     seed_rates.py       # HDB parking rates -> rate_schemes / rate_rules
     hdb.py, svy21.py    # data.gov.sg client + parsing, SVY21 -> WGS84
@@ -49,9 +50,17 @@ python -m collector.seed_rates      # parking rates (re-run daily by the poller)
 python -m collector.poller          # keep running; Ctrl+C to stop
 ```
 
-The collector must stay running to build history: every hour it is off is history the
-busyness estimate will never have. On a Mac, `caffeinate -i python -m collector.poller`
-stops idle sleep (closing the lid still stops it).
+History doesn't have to be collected live: the availability API keeps past snapshots,
+so `backfill` fills them in (resumable; re-run to retry failures or top up gaps):
+
+```bash
+python -m collector.backfill              # last 28 days, every 15 min: ~2,700 requests, ~2 h, ~1 GB
+python -m collector.backfill --days 56    # 8 weeks (the busyness lookback)
+```
+
+The poller keeps `availability_latest` fresh for live availability, so it should be running
+whenever the app is used (e.g. the demo). Gaps in history can be filled later with `backfill`.
+On a Mac, `caffeinate -i python -m collector.poller` stops idle sleep.
 
 ## Interfaces
 
