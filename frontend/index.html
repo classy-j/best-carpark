@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Best Carpark</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header><h1>Best Carpark</h1></header>
+  <main>
+    <section class="panel">
+      <form id="search-form">
+        <label>Destination <input name="destination" required placeholder="e.g. Albert Centre"></label>
+        <label>Arrival <input type="datetime-local" name="arrival" required></label>
+        <label>Departure <input type="datetime-local" name="departure"></label>
+        <label>or parking duration (minutes) <input type="number" name="duration" min="1" placeholder="optional"></label>
+        <label>Vehicle
+          <select name="lotType">
+            <option value="CAR">Car</option><option value="MOTORCYCLE">Motorcycle</option>
+            <option value="HEAVY_VEHICLE">Heavy vehicle</option>
+          </select>
+        </label>
+        <label>Vehicle height (m) <input type="number" name="vehicleHeight" step="0.1" min="0" placeholder="optional"></label>
+        <label class="inline"><input type="checkbox" name="ev"> I want EV charging</label>
+        <fieldset>
+          <legend>Priority (1 = most important)</legend>
+          <label>1st <select name="p1"><option value="PRICE">Price</option><option value="WALKING_TIME">Walking time</option><option value="AVAILABILITY">Availability</option><option value="EV_CHARGING">EV charging</option></select></label>
+          <label>2nd <select name="p2"><option value="WALKING_TIME">Walking time</option><option value="PRICE">Price</option><option value="AVAILABILITY">Availability</option><option value="EV_CHARGING">EV charging</option></select></label>
+          <label>3rd <select name="p3"><option value="AVAILABILITY">Availability</option><option value="PRICE">Price</option><option value="WALKING_TIME">Walking time</option><option value="EV_CHARGING">EV charging</option></select></label>
+        </fieldset>
+        <button type="submit">Find carparks</button>
+      </form>
+      <p id="status" role="status"></p>
+      <ol id="choices" class="choices"></ol>
+      <ol id="results"></ol>
+    </section>
+    <section id="map"></section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
