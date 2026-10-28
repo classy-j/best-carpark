@@ -377,3 +377,23 @@ def get_lot_types(carpark_ids: Iterable[str]) -> dict[str, set[LotType]]:
         ):
             out.setdefault(cid, set()).add(lot)
     return out
+
+
+# ---------------------------------------------------------------- EV charging (D)
+
+def list_carparks() -> list[CarparkInfo]:
+    """Every carpark (for matching EV charging stations to carparks)."""
+    with session_scope() as s:
+        return [_to_info(c) for c in s.scalars(select(Carpark)).all()]
+
+
+def set_ev_flags(flags: dict[str, bool]) -> int:
+    """Store has_ev_charging per carpark ({carpark_id: True/False}). Carparks not in
+    `flags` are left unchanged. Returns the number of carparks written."""
+    with session_scope() as s:
+        for value in (True, False):
+            ids = [cid for cid, v in flags.items() if v is value]
+            for i in range(0, len(ids), 1000):
+                s.execute(update(Carpark).where(Carpark.carpark_id.in_(ids[i:i + 1000]))
+                          .values(has_ev_charging=value))
+    return len(flags)

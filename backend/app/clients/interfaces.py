@@ -23,4 +23,4 @@ class CarparkDataSource(Protocol):               # realized by HdbAdapter
 
 
 class EVChargingSource(Protocol):                # realized by LtaDataMallAdapter
-    def fetch_charging_points(self) -> list[dict]: ...
+    def fetch_charging_points(self) -> list: ...      # list[EVStation], see lta_datamall.py
