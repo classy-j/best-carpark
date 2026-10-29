@@ -4,6 +4,7 @@ from functools import lru_cache
 from app.clients.hdb import HdbAdapter
 from app.clients.lta_datamall import LtaDataMallAdapter
 from app.clients.onemap import OneMapAdapter
+from app.clients.ura_data import UraClient
 from app.collectors.historical_availability_collector import HistoricalAvailabilityCollector
 from app.config import Settings
 from app.repositories.carpark_repository import CarparkRepository
@@ -33,6 +34,12 @@ def get_map_service() -> OneMapAdapter:
 def get_ev_source() -> LtaDataMallAdapter:
     s = get_settings()
     return LtaDataMallAdapter(s.lta_base_url, s.lta_api_key)
+
+
+@lru_cache
+def get_ev_charging_service() -> EVChargingService:
+    """One instance per process, so the collector's download is what search reads."""
+    return EVChargingService(get_ev_source())
 
 
 # ---- persistent stores ----
@@ -66,7 +73,7 @@ def get_search_service() -> SearchService:
         fee_calculator=FeeCalculator(get_carpark_repository()),
         availability_service=get_availability_service(),
         busyness_estimator=get_busyness_estimator(),
-        ev_charging_service=EVChargingService(get_ev_source()),
+        ev_charging_service=get_ev_charging_service(),
         ranking_engine=RankingEngine(),
         walking_service=WalkingService(get_map_service()),
         search_radius_m=s.search_radius_m,
@@ -76,4 +83,15 @@ def get_search_service() -> SearchService:
 
 def build_collector() -> HistoricalAvailabilityCollector:
     return HistoricalAvailabilityCollector(HdbAdapter(), get_availability_repository(),
-                                           get_settings().collect_interval_minutes)
+                                           get_settings().collect_interval_minutes,
+                                           ev_service=get_ev_charging_service(),
+                                           ura=_build_ura_sync())
+
+
+def _build_ura_sync():
+    """None until URA_API_KEY is set, so the collector simply skips URA."""
+    key = get_settings().ura_api_key
+    if not key:
+        return None
+    from app.collectors.ura import UraSync
+    return UraSync(UraClient(key))

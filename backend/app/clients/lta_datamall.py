@@ -1,87 +1,106 @@
 """LtaDataMallAdapter: realizes EVChargingSource (LTA DataMall).
 
-TODO(EV owner): implement fetch_charging_points() against LTA DataMall's EV charging
-dataset and match points to carparks (FR2.8/FR2.9). Until then EVChargingService uses
-the carparks.has_ev_charging flag, and charger counts are shown as Unavailable.
+fetch_charging_points() downloads LTA's EV charging batch file (EVCBatch: the API answers
+with a link to a JSON file of every charging location in Singapore) and normalises each
+location into an EVStation. Matching stations to carparks is EVChargingService's job.
+Ported from feature/evinfo EVcharging.py (LTAClient), on httpx like the other adapters.
 
 fetch_availability() is kept from the earlier prototype (CarParkAvailabilityv2). It is
 not used: availability comes from data.gov.sg, which also gives total lots and history.
 """
-import requests
-from typing import List, Dict, Any
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
 
-class LTAClient:
-    """Client for interacting with the external LTA DataMall API."""
-    
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = "https://datamall2.mytransport.sg/ltaodataservice"
-        self.headers = {"AccountKey": self.api_key, "accept": "application/json"}
+from app.clients.base import BaseApiClient
+from app.exceptions import ApiClientError
+from app.utils.timeutil import now_sg
 
-    def get_all_ev_chargers(self) -> List[Dict[str, Any]]:
-        """Fetches and normalizes the complete islandwide EV charging dataset."""
-        if not self.api_key:
-            print("[LTAClient] Warning: No API key provided.")
-            return []
+# Status values counted as "free". TODO(EV owner): confirm against a real EVCBatch file;
+# if LTA uses other values, every charger will show as occupied.
+FREE_STATUSES = {"available", "free", "1"}
 
+
+@dataclass(frozen=True)
+class EVStation:
+    latitude: float
+    longitude: float
+    total_points: int
+    available_points: Optional[int]      # None = feed gave no status for this location
+    plug_types: tuple[str, ...] = ()
+
+
+def _float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalise_station(loc: dict) -> Optional[EVStation]:
+    """One location from the batch file -> EVStation. None if unusable."""
+    lat = _float(loc.get("latitude") or loc.get("Latitude"))
+    lng = _float(loc.get("longtitude") or loc.get("longitude") or loc.get("Longitude"))  # LTA spells it "longtitude"
+    if lat is None or lng is None:
+        return None
+
+    total, free, status_seen, plugs = 0, 0, False, set()
+    for cp in loc.get("chargingPoints") or []:
+        cp_status = str(cp.get("status", "")).strip().lower()
+        for pt in cp.get("plugTypes") or []:
+            plug = pt.get("plugType") or pt.get("connectorType")
+            if plug:
+                plugs.add(str(plug))
+            for status in ([str(ev.get("status", cp_status)).strip().lower() for ev in pt.get("evIds") or []]
+                           or [cp_status]):
+                total += 1
+                if status:
+                    status_seen = True
+                    free += status in FREE_STATUSES
+
+    if total == 0:                              # no point details: fall back to the stated count
         try:
-            response = requests.get(f"{self.base_url}/EVCBatch", headers=self.headers, timeout=10)
-            response.raise_for_status()
-            
-            val = response.json().get("value", [])
-            if not val or "Link" not in val[0]:
-                return []
+            total = int(loc.get("NoOfChargingPoints") or 0)
+        except (TypeError, ValueError):
+            total = 0
+    if total <= 0:
+        return None                             # never invent a charger
+    return EVStation(lat, lng, total, free if status_seen else None, tuple(sorted(plugs)))
 
-            batch_res = requests.get(val[0]["Link"], timeout=25)
-            batch_res.raise_for_status()
-            batch_data = batch_res.json()
 
-            raw_locations = batch_data.get("evLocationsData", []) if isinstance(batch_data, dict) else batch_data
-            return self._normalize_ev_data(raw_locations)
+class LtaDataMallAdapter(BaseApiClient):
+    PAGE_SIZE = 500
 
-        except requests.exceptions.RequestException as e:
-            print(f"[LTAClient] Network Error: {e}")
-            return []
+    def __init__(self, base_url: str, account_key: str, **kwargs):
+        super().__init__(base_url, **kwargs)
+        self._has_key = bool(account_key)
+        self._headers = {"AccountKey": account_key, "accept": "application/json"}
 
-    def _normalize_ev_data(self, raw_locations: List[Dict]) -> List[Dict[str, Any]]:
-        """Normalizes LTA's nested schema into a flat list of dictionaries."""
-        normalized = []
-        for loc in raw_locations:
-            lat = loc.get("latitude") or loc.get("Latitude")
-            lon = loc.get("longtitude") or loc.get("longitude") or loc.get("Longitude")
-            
-            if lat is None or lon is None:
-                continue
+    def fetch_charging_points(self) -> list[EVStation]:
+        """All EV charging locations. Raises ApiClientError on any failure, so a download
+        problem is never mistaken for "no chargers anywhere"."""
+        if not self._has_key:
+            raise ApiClientError("LTA_API_KEY is not set")
+        meta = self._request("GET", "/EVCBatch", headers=self._headers)
+        value = (meta or {}).get("value") or []
+        link = value[0].get("Link") if value and isinstance(value[0], dict) else None
+        if not link:
+            raise ApiClientError(f"EVCBatch returned no download link: {meta!r:.200}")
+        data = self._request("GET", link, timeout=60)     # absolute URL (file host), large file
+        raw = data.get("evLocationsData", []) if isinstance(data, dict) else data
+        stations = [s for s in map(normalise_station, raw or []) if s is not None]
+        if not stations:
+            raise ApiClientError("EV batch file contained no usable stations")
+        return stations
 
-            total_points, available_points = 0, 0
-            plug_types = set()
-
-            for cp in loc.get("chargingPoints", []):
-                cp_status = str(cp.get("status", "")).lower()
-                for pt in cp.get("plugTypes", []):
-                    p_type = pt.get("plugType") or pt.get("connectorType")
-                    if p_type: plug_types.add(p_type)
-
-                    ev_ids = pt.get("evIds", [])
-                    if ev_ids:
-                        for ev in ev_ids:
-                            total_points += 1
-                            if str(ev.get("status", cp_status)).lower() in ("available", "free", "1"):
-                                available_points += 1
-                    else:
-                        total_points += 1
-                        if cp_status in ("available", "free", "1"):
-                            available_points += 1
-
-            if total_points == 0:
-                total_points = int(loc.get("NoOfChargingPoints", 1))
-
-            normalized.append({
-                "latitude": float(lat),
-                "longitude": float(lon),
-                "total_points": total_points,
-                "available_points": available_points,
-                "plug_types": sorted(plug_types) if plug_types else ["Standard"]
-            })
-            
-        return normalized
+    def fetch_availability(self, recorded_at: datetime | None = None) -> list[dict]:
+        recorded_at = recorded_at or now_sg()
+        rows_out, skip = [], 0
+        while True:
+            data = self._request("GET", "/CarParkAvailabilityv2", headers=self._headers, params={"$skip": skip})
+            rows = data.get("value", [])
+            rows_out.extend({"carpark_id": str(r["CarParkID"]), "lot_type": r["LotType"],
+                             "available_lots": int(r["AvailableLots"]), "recorded_at": recorded_at} for r in rows)
+            if len(rows) < self.PAGE_SIZE:
+                return rows_out
+            skip += self.PAGE_SIZE

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     onemap_api_token: str = ""          # alternative to email/password
     lta_base_url: str = "https://datamall2.mytransport.sg/ltaodataservice"
     lta_api_key: str = ""
+    ura_api_key: str = ""               # URA Data Service AccessKey (emailed after registering)
 
     # Historical availability collector
     collector_enabled: bool = False     # True = run it inside the API process (only with ONE worker)

@@ -48,6 +48,7 @@ def main() -> None:
         return
     if args.once:
         collector.poll_once()
+        collector.poll_ura()
         return
 
     sched = build_scheduler(collector)

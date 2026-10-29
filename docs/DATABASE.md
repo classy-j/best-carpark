@@ -111,4 +111,4 @@ HDB rates as of Oct 2026 (sources in `collector/seed_rates.py`).
 ## Notes for the team
 - `FeeCalculator.calculateFee(carpark, arrivalTime, departureTime)` also needs the **lot type**: rates differ for cars, motorcycles and heavy vehicles.
 - Live availability for search can come from `get_latest_availability` (the collector refreshes it every 10 min) instead of calling data.gov.sg on every search.
-- Only HDB carparks are loaded so far (URA/LTA not yet).
+- HDB carparks are always loaded. URA carparks, rates and availability are loaded when URA_API_KEY is set (`python -m app.collectors.ura`, and by the collector). LTA is used for EV charging only.
