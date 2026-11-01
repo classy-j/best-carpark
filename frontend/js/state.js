@@ -4,13 +4,13 @@
 //                   re-rank after changing preferences (UC-08 AF2) and sort/filter without searching
 //                   again (UC-14). Kept in sessionStorage so a page refresh doesn't lose the results.
 
-const FACTORS = ["PRICE", "WALKING_TIME", "AVAILABILITY", "EV_CHARGING"];
+const FACTORS = ["PRICE", "WALKING_TIME", "AVAILABILITY"];
 const LOT_TYPES = ["CAR", "MOTORCYCLE", "HEAVY_VEHICLE"];
 const CARPARK_TYPES = ["MULTI_STOREY", "SURFACE", "BASEMENT", "COVERED", "SURFACE_MULTI_STOREY",
   "MECHANISED", "MECHANISED_AND_SURFACE"];
 
 const DEFAULT_PREFERENCES = Object.freeze({
-  priority_ranking: ["PRICE", "WALKING_TIME", "AVAILABILITY", "EV_CHARGING"],
+  priority_ranking: ["PRICE", "WALKING_TIME", "AVAILABILITY"],
   lot_type: "CAR",
   vehicle_height_m: null,
   carpark_types: [],

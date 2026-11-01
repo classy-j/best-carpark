@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.schemas.carpark import Availability, CarparkOut, EVCharging, ExpectedBusyness, Location
 from app.utils.timeutil import to_sg
 
-Priority = Literal["PRICE", "WALKING_TIME", "AVAILABILITY", "EV_CHARGING"]
+Priority = Literal["PRICE", "WALKING_TIME", "AVAILABILITY"]
 LotTypeName = Literal["CAR", "MOTORCYCLE", "HEAVY_VEHICLE"]
-_ALIASES = {"COST": "PRICE", "DISTANCE": "WALKING_TIME", "WALKING": "WALKING_TIME", "EV": "EV_CHARGING"}
+_ALIASES = {"COST": "PRICE", "DISTANCE": "WALKING_TIME", "WALKING": "WALKING_TIME"}
 
 
 class SearchPreference(BaseModel):
@@ -91,6 +91,7 @@ class SearchResult(BaseModel):
     straight_line_m: Optional[float] = None
     walking_distance_m: Optional[int] = None       # None = OneMap could not route
     walking_time_min: Optional[float] = None
+    walking_time_estimated: bool = False  # True means approximate, NOT from OneMap
     estimated_fee_sgd: Optional[Decimal] = None    # None = Unavailable (never 0 for "unknown")
     availability: Optional[Availability] = None
     expected_busyness: Optional[ExpectedBusyness] = None

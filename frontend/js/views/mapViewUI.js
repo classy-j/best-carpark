@@ -83,7 +83,7 @@ class MapViewUI {
   popup(r) {
     return h("div", { class: "map-popup" },
       h("strong", {}, `${r.rank}. ${r.carpark.name}`),
-      h("div", {}, `${Format.walkTime(r)} walk · est. ${Format.fee(r.estimated_fee_sgd)}`),
+      h("div", {}, `${Format.walkTime(r)} · ${Format.walkDistance(r)} · est. ${Format.fee(r.estimated_fee_sgd)}`),
       h("div", {}, `Now: ${Format.lots(r.availability)}`, r.availability?.is_stale ? " (may be outdated)" : ""),
       h("button", { type: "button", class: "btn-primary small",
         onclick: () => this.onSelect(r.carpark.carpark_id) }, "View details"));

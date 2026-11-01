@@ -8,7 +8,7 @@ const Format = (() => {
   const UNAVAILABLE = "Unavailable";
 
   const LABELS = {
-    PRICE: "Price", WALKING_TIME: "Walking time", AVAILABILITY: "Availability", EV_CHARGING: "EV charging",
+    PRICE: "Price", WALKING_TIME: "Walking time", AVAILABILITY: "Availability",
     CAR: "Car", MOTORCYCLE: "Motorcycle", HEAVY_VEHICLE: "Heavy vehicle",
     MULTI_STOREY: "Multi-storey", SURFACE: "Surface", BASEMENT: "Basement", COVERED: "Covered",
     MECHANISED: "Mechanised", SURFACE_MULTI_STOREY: "Surface / multi-storey",
@@ -34,8 +34,8 @@ const Format = (() => {
   }
 
   function walkTime(result) {
+    if (result.walking_distance_m == null || result.walking_time_min == null) return "Route unavailable";
     const min = result.walking_time_min;
-    if (min == null) return UNAVAILABLE;
     return min < 1 ? "< 1 min" : `${Math.round(min)} min`;
   }
 

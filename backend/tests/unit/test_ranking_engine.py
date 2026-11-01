@@ -7,7 +7,7 @@ from tests.helpers import MONDAY_1PM, make_info
 
 
 def result(cid, fee, walk, **kw):
-    return SearchResult(carpark=CarparkOut.from_info(make_info(cid)), walking_time_min=walk,
+    return SearchResult(carpark=CarparkOut.from_info(make_info(cid)), walking_time_min=walk, walking_distance_m=round(walk * 80) if walk is not None else None,
                         estimated_fee_sgd=None if fee is None else Decimal(fee), **kw)
 
 
@@ -39,7 +39,9 @@ def test_expected_busyness_preferred_over_current_availability():
     assert ranked(rs, ["AVAILABILITY"]) == ["A", "B"]
 
 
-def test_ev_factor():
+def test_ev_is_filter_not_ranking_factor():
     rs = [result("A", "1", 5, ev_charging=EVCharging(supported=False)),
           result("B", "1", 5, ev_charging=EVCharging(supported=True))]
-    assert ranked(rs, ["EV_CHARGING", "PRICE"]) == ["B", "A"]
+    # With identical price/walking metrics, EV support should not change the score.
+    RankingEngine().rank_carparks(rs, SearchPreference(priority_ranking=["PRICE", "WALKING_TIME"]))
+    assert rs[0].composite_score == rs[1].composite_score

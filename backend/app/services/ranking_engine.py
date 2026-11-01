@@ -11,17 +11,12 @@ from app.schemas.search import SearchPreference, SearchResult
 
 WEIGHT_DECAY = 0.6
 DEFAULT_PRIORITIES = ["PRICE", "WALKING_TIME", "AVAILABILITY"]
-WALK_M_PER_MIN = 80          # only used when OneMap had no route: straight line -> rough minutes
-DETOUR = 1.3
 LOTS_FOR_FULL_SCORE = 50     # availability score when the total is unknown
 
 
 def walking_minutes(r: SearchResult) -> Optional[float]:
-    if r.walking_time_min is not None:
-        return r.walking_time_min
-    if r.straight_line_m is not None:
-        return r.straight_line_m * DETOUR / WALK_M_PER_MIN
-    return None
+    """Only verified OneMap durations are comparable for walking-time ranking."""
+    return r.walking_time_min if r.walking_distance_m is not None else None
 
 
 def _relative_lower_is_better(values: dict[int, Optional[float]]) -> dict[int, Optional[float]]:
@@ -52,7 +47,13 @@ class RankedResultList:
             w = walking_minutes(r)
             return (-r.composite_score, w if w is not None else float("inf"),
                     r.estimated_fee_sgd if r.estimated_fee_sgd is not None else float("inf"))
-        ordered = sorted(self._results, key=key)
+        # Never give an unrouted carpark a fully comparable recommendation rank.
+        # Retain it after all verified routes, and retain its other score for context.
+        verified = [r for r in self._results if walking_minutes(r) is not None]
+        unverified = [r for r in self._results if walking_minutes(r) is None]
+        ordered = sorted(verified, key=key) + sorted(
+            unverified, key=lambda r: (-r.composite_score,
+                                       r.straight_line_m if r.straight_line_m is not None else float("inf")))
         for i, r in enumerate(ordered, start=1):
             r.rank = i
         return ordered
@@ -68,8 +69,6 @@ class RankingEngine:
                 {i: None if results[i].estimated_fee_sgd is None else float(results[i].estimated_fee_sgd) for i in idx}),
             "WALKING_TIME": _relative_lower_is_better({i: walking_minutes(results[i]) for i in idx}),
             "AVAILABILITY": {i: _availability_score(results[i]) for i in idx},
-            "EV_CHARGING": {i: None if results[i].ev_charging.supported is None
-                            else float(results[i].ev_charging.supported) for i in idx},
         }
         for i in idx:
             total = weight = 0.0

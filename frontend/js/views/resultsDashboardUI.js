@@ -97,7 +97,20 @@ class ResultsDashboardUI {
       notice.hidden = false;
     }
 
-    $("#list-view").replaceChildren(...shown.map((r) => this.card(r, request)));
+    const routed = shown.filter((r) => r.walking_time_min != null && r.walking_distance_m != null);
+    const other = shown.filter((r) => r.walking_time_min == null || r.walking_distance_m == null);
+    const list = [];
+    if (routed.length) {
+      list.push(h("h2", { class: "results-group-title" }, "Recommended carparks with verified walking routes"));
+      list.push(...routed.map((r) => this.card(r, request)));
+    }
+    if (other.length) {
+      list.push(h("h2", { class: "results-group-title" }, "Other nearby carparks"));
+      list.push(h("p", { class: "muted" },
+        "Walking routes are unavailable for these carparks. Straight-line distances are shown instead; they are not directly comparable with actual walking times."));
+      list.push(...other.map((r) => this.card(r, request)));
+    }
+    $("#list-view").replaceChildren(...list);
     this.mapView.render(response.destination, shown, SearchSession.view === "map");
   }
 
@@ -138,6 +151,10 @@ class ResultsDashboardUI {
         h("div", { class: "badges" }, badges)),
       h("dl", { class: "metrics" },
         metric("Walk", Format.walkTime(r), Format.walkDistance(r)),
+        h("span", { class: "route-information", role: "note", tabindex: "0",
+          title: r.walking_distance_m == null
+            ? "Straight-line distance is the direct distance to the destination, not a real walking route. Roads and crossings may make the walk longer."
+            : "Walking time and distance follow a OneMap walking route." }, "ⓘ"),
         metric("Est. fee", Format.fee(r.estimated_fee_sgd), r.estimated_fee_sgd == null ? "no rate data" : "estimate"),
         metric("Now", Format.lots(a),
           a ? `${occ == null ? "" : `${occ}% full · `}updated ${Format.minutesAgo(a.last_updated)}` : "no live data",

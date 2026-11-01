@@ -16,6 +16,7 @@ from app.services.fee_calculator import FeeCalculator
 from app.services.ranking_engine import RankingEngine
 from app.services.search_service import SearchService
 from app.services.walking_service import WalkingService
+from app.utils.public_holidays import sg_public_holidays
 
 
 @lru_cache
@@ -70,7 +71,7 @@ def get_search_service() -> SearchService:
     return SearchService(
         map_service=get_map_service(),
         carpark_repo=get_carpark_repository(),
-        fee_calculator=FeeCalculator(get_carpark_repository()),
+        fee_calculator=FeeCalculator(get_carpark_repository(), holidays=sg_public_holidays()),
         availability_service=get_availability_service(),
         busyness_estimator=get_busyness_estimator(),
         ev_charging_service=get_ev_charging_service(),

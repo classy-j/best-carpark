@@ -96,6 +96,7 @@ class SearchService:
                 straight_line_m=round(haversine_m(destination.latitude, destination.longitude, c.latitude, c.longitude)),
                 walking_distance_m=route.distance_m if route else None,
                 walking_time_min=round(route.duration_s / 60, 1) if route else None,
+                walking_time_estimated=False,  # absent route is NOT a walking-time estimate
                 estimated_fee_sgd=self._fees.calculate_fee(c.carpark_id, request),
                 availability=current.get(c.carpark_id),
                 expected_busyness=self._busyness.get_expected_busyness(c.carpark_id, pref.lot_type, request.arrival_time),

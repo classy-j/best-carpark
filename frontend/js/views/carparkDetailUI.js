@@ -79,7 +79,8 @@ class CarparkDetailUI {
             busyness ? `typical for this day and time${Format.isLimitedHistory(busyness) ? " (limited data)" : ""}`
               : "not enough history",
             `expected level-${busyness ? busyness.level.toLowerCase() : "unknown"}`),
-          tile("Walking time", result ? Format.walkTime(result) : Format.UNAVAILABLE, result ? Format.walkDistance(result) : null),
+          tile("Walking route", result ? Format.walkTime(result) : Format.UNAVAILABLE,
+            result ? `${Format.walkDistance(result)} · ${result.walking_distance_m == null ? "Straight-line only; route unavailable" : "OneMap walking route"}` : null),
           tile("Estimated fee", result ? Format.fee(result.estimated_fee_sgd) : Format.UNAVAILABLE,
             result && result.estimated_fee_sgd != null ? "estimate for your parking period" : null),
           tile("EV charging", Format.ev(ev))),
