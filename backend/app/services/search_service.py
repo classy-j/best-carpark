@@ -26,6 +26,7 @@ from app.utils.timeutil import now_sg
 
 NO_CARPARKS = "No carparks found within {km:g} km of the destination."
 NONE_MATCH = "No carparks within {km:g} km satisfy the selected requirements."
+URA_PREFIX = "URA:"   # URA carparks: kerbside and surface lots, listed per vehicle category, no gantry
 
 
 class SearchService:
@@ -67,6 +68,10 @@ class SearchService:
         known_lots = self._carparks.get_lot_types([c.carpark_id for c in candidates])
         eligible = [c for c in candidates
                     if c.carpark_id not in known_lots or pref.lot_type in {l.value for l in known_lots[c.carpark_id]}]
+        # URA lists rates per vehicle category, so a URA carpark with no rate rules for the
+        # Driver's lot type does not offer that lot type (e.g. backlanes without car lots): FR4.3.
+        eligible = [c for c in eligible
+                    if not c.carpark_id.startswith(URA_PREFIX) or self._carparks.get_rate_rules(c.carpark_id, pref.lot_type)]
         if pref.vehicle_height_m:
             eligible = [c for c in eligible if c.gantry_height_m is None or pref.vehicle_height_m <= c.gantry_height_m]
         return eligible, (None if eligible else NONE_MATCH.format(km=km))           # UC-07 EX1
@@ -101,7 +106,8 @@ class SearchService:
                 availability=current.get(c.carpark_id),
                 expected_busyness=self._busyness.get_expected_busyness(c.carpark_id, pref.lot_type, request.arrival_time),
                 ev_charging=self._ev.get_charging_info(out),
-                height_unknown=bool(pref.vehicle_height_m) and c.gantry_height_m is None,
+                height_unknown=(bool(pref.vehicle_height_m) and c.gantry_height_m is None
+                                and not c.carpark_id.startswith(URA_PREFIX)),   # URA lots have no gantry
             ))
         ranked = self._ranking.rank_carparks(results, pref).sorted_with_tie_break()
         return SearchResponse(destination_address=request.destination_address,
