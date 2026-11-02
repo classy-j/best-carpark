@@ -55,7 +55,10 @@ def carpark_id(pp_code: str) -> str:
 class UraClient:
     def __init__(self, access_key: str, http_client: Optional[httpx.Client] = None, timeout: float = 30.0):
         self._key = access_key
-        self._http = http_client or httpx.Client(timeout=timeout, transport=httpx.HTTPTransport(retries=2))
+        # URA's gateway answers non-browser User-Agents (e.g. python-httpx) with an HTML challenge page,
+        # so identify as a browser.
+        self._http = http_client or httpx.Client(timeout=timeout, transport=httpx.HTTPTransport(retries=2),
+                                                 headers={"User-Agent": "Mozilla/5.0"})
         self._token: Optional[str] = None
         self._token_day: Optional[date] = None
 
