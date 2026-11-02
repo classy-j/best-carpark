@@ -7,8 +7,8 @@ from app.main import create_app
 from app.schemas.carpark import Location
 from app.schemas.search import PlaceMatch, SearchResponse
 
-BODY = {"destination_address": "NTU", "arrival_time": "2026-10-19T13:00:00",
-        "departure_time": "2026-10-19T15:00:00", "preference": {"priority_ranking": ["distance", "cost"]}}
+BODY = {"destination_address": "NTU", "arrival_time": "2099-10-19T13:00:00",
+        "departure_time": "2099-10-19T15:00:00", "preference": {"priority_ranking": ["distance", "cost"]}}
 
 
 class StubService:
@@ -34,7 +34,7 @@ def test_search_ok():
 
 
 def test_validation_error_is_422():
-    r = client_with(StubService()).post("/api/v1/search", json={**BODY, "departure_time": "2026-10-19T12:00:00"})
+    r = client_with(StubService()).post("/api/v1/search", json={**BODY, "departure_time": "2099-10-19T12:00:00"})
     assert r.status_code == 422
 
 
@@ -48,3 +48,9 @@ def test_error_mapping():
 
 def test_health():
     assert client_with(StubService()).get("/health").json() == {"status": "ok"}
+
+
+def test_past_arrival_is_422():
+    r = client_with(StubService()).post("/api/v1/search", json={**BODY, "arrival_time": "2020-01-06T13:00:00",
+                                                               "departure_time": "2020-01-06T15:00:00"})
+    assert r.status_code == 422

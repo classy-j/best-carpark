@@ -112,3 +112,14 @@ def test_destination_resolution():
     assert service(FakeCarparks([]), map_=FakeMap(matches=two)).search_carparks(exact).destination.latitude == 1.347
     with pytest.raises(AddressNotFoundError):
         service(FakeCarparks([]), map_=FakeMap(matches=[])).search_carparks(make_request())
+
+
+def test_ura_carpark_without_rules_for_lot_type_is_excluded_and_never_height_unknown():
+    H = make_info("HDB:H", 1.3011, 103.8542, gantry_height_m=None)                 # HDB, height not published
+    U_CAR = make_info("URA:C1", 1.3012, 103.8543, gantry_height_m=None)            # URA lot with car rates
+    U_BACK = make_info("URA:BL1", 1.3013, 103.8544, gantry_height_m=None)          # backlane: no car rates
+    repo = FakeCarparks([H, U_CAR, U_BACK], rules={"URA:C1": [rule(per_minute=True)]})
+    res = service(repo).search_carparks(make_request(preference={"vehicle_height_m": 2.0}), now=MONDAY_1PM)
+    by_id = {r.carpark.carpark_id: r for r in res.results}
+    assert set(by_id) == {"HDB:H", "URA:C1"}           # HDB with no rules stays (fee Unavailable)
+    assert by_id["HDB:H"].height_unknown and not by_id["URA:C1"].height_unknown
