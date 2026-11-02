@@ -5,7 +5,7 @@
 const SORTERS = {
   recommended: () => 0,
   cheapest: by((r) => r.estimated_fee_sgd, "asc"),
-  nearest: by((r) => r.walking_distance_m ?? r.straight_line_m, "asc"),
+  nearest: by((r) => r.walking_time_min, "asc"),
   available: by((r) => r.availability?.available_lots, "desc"),
 };
 
