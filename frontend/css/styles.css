@@ -234,3 +234,9 @@ input:focus, select:focus { border-color: var(--brand); outline: 2px solid #b9d5
 @media (min-width: 1040px) {
   .metrics { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Group headings and notes span the full width of the results grid */
+#list-view > .results-group-title,
+#list-view > p.muted {
+  grid-column: 1 / -1;
+}
