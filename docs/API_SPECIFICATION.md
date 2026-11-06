@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-This document defines the REST API contract between the frontend and backend of the Smart Carpark Recommendation System.
+This document defines the REST API contract between the frontend and backend of the Best Carpark App.
 
-The backend is responsible for interacting with external data sources and normalising their data. External APIs such as OneMap, HDB/data.gov.sg, LTA DataMall, and other supported data sources are not directly accessed by the frontend.
+The backend is responsible for retrieving, normalising and processing data from external services and the MySQL database. External APIs such as OneMap, HDB/data.gov.sg, URA Data Service and LTA DataMall are accessed by the backend rather than directly by the frontend.
 
 ---
 
@@ -34,7 +34,7 @@ Example:
 
 ```json
 {
-  "arrival_time": "2026-10-09T14:00:00+08:00",
+  "arrival_time": "2026-11-10T14:00:00+08:00",
   "walking_time_min": 6.0
 }
 ```
@@ -45,9 +45,11 @@ Date and time values use ISO 8601 format.
 
 Example:
 
-`2026-10-09T14:00:00+08:00`
+`2026-11-10T14:00:00+08:00`
 
-Timezone-aware values are converted to Singapore Time by the backend. Naive date-time values received from the frontend are interpreted as Singapore Time.
+Timezone-aware values are converted to Singapore Time by the backend.
+
+Naive date-time values received from the frontend are interpreted as Singapore Time.
 
 ### Units
 
@@ -57,7 +59,7 @@ Timezone-aware values are converted to Singapore Time by the backend. Naive date
 | Walking time | minutes (min) |
 | Parking duration | minutes |
 | Parking fee | SGD |
-| Vehicle/gantry height | metres (m) |
+| Vehicle / gantry height | metres (m) |
 | Coordinates | WGS84 decimal degrees |
 | Occupancy | percentage (0–100) |
 
@@ -65,7 +67,7 @@ Timezone-aware values are converted to Singapore Time by the backend. Naive date
 
 Unavailable information is represented using JSON `null`.
 
-For example:
+Example:
 
 ```json
 {
@@ -74,6 +76,12 @@ For example:
 ```
 
 A value such as `0` must not be used to represent unavailable data when `0` has an actual meaning.
+
+For example:
+
+- `available_lots: 0` means that no parking lots are currently available.
+- `available_chargers: 0` means that EV charging is supported but no chargers are currently available.
+- `null` means that the information is unavailable or cannot be determined.
 
 ---
 
@@ -87,24 +95,38 @@ A value such as `0` must not be used to represent unavailable data when `0` has 
 | GET | `/api/v1/carparks/{carpark_id}/expected-busyness` | Retrieve expected busyness for a carpark |
 | GET | `/health` | Check whether the backend is running |
 
-Destination resolution is handled as part of `POST /api/v1/search`. A separate public destination-search endpoint is not currently exposed.
+Destination resolution is handled as part of `POST /api/v1/search`.
+
+A separate public destination-search endpoint is not currently exposed.
 
 ---
 
-## 4. Search for Carparks
+# 4. Search for Carparks
 
-### POST `/api/v1/search`
+## POST `/api/v1/search`
 
-Searches for eligible carparks within 1 km of the selected destination and ranks them according to the user's preferences.
+Searches for eligible carparks within the configured 1 km radius of the selected destination.
 
-### Request Body
+The backend:
+
+1. validates and resolves the destination;
+2. finds supported carparks within 1 km;
+3. applies the configured carpark, lot-type, vehicle-height and EV filters;
+4. obtains parking fee, availability and expected busyness information;
+5. obtains OneMap walking routes for up to the 20 nearest eligible carparks;
+6. ranks the routed carparks according to the user's ranking preferences; and
+7. places eligible carparks without a verified walking route after the routed carparks.
+
+---
+
+## 4.1 Request Body
 
 A request using parking duration may be sent as:
 
 ```json
 {
   "destination_address": "Nanyang Technological University",
-  "arrival_time": "2026-10-09T14:00:00+08:00",
+  "arrival_time": "2026-11-10T14:00:00+08:00",
   "parking_duration_minutes": 180,
   "preference": {
     "priority_ranking": [
@@ -125,8 +147,8 @@ Alternatively, the client may provide a departure time:
 ```json
 {
   "destination_address": "Nanyang Technological University",
-  "arrival_time": "2026-10-09T14:00:00+08:00",
-  "departure_time": "2026-10-09T17:00:00+08:00",
+  "arrival_time": "2026-11-10T14:00:00+08:00",
+  "departure_time": "2026-11-10T17:00:00+08:00",
   "preference": {
     "priority_ranking": [
       "PRICE",
@@ -141,30 +163,43 @@ Alternatively, the client may provide a departure time:
 }
 ```
 
-### Request Fields
+---
+
+## 4.2 Request Fields
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `destination_address` | string | Yes | Destination entered or selected by the user |
-| `destination_location` | object or null | No | Coordinates of a destination selected after multiple OneMap matches are returned |
-| `arrival_time` | string | Yes | Expected arrival time in ISO 8601 format |
+| `destination_location` | object or null | No | Coordinates of a destination selected after multiple OneMap matches |
+| `arrival_time` | string | Yes | Intended arrival time in ISO 8601 format |
 | `departure_time` | string or null | Conditional | Intended departure time |
 | `parking_duration_minutes` | integer or null | Conditional | Intended parking duration in minutes |
-| `preference` | object | No | User ranking and filtering preferences; backend defaults are used when omitted |
+| `preference` | object | No | Ranking and filtering preferences; defaults are used when omitted |
 
 At least one of `departure_time` or `parking_duration_minutes` must be provided.
 
-If `departure_time` is omitted and `parking_duration_minutes` is provided, the backend calculates the departure time from the arrival time and parking duration.
+If `departure_time` is omitted and `parking_duration_minutes` is supplied, the backend calculates the departure time using:
 
-If both fields are provided, the supplied `departure_time` is used.
+`departure_time = arrival_time + parking_duration_minutes`
+
+If both `departure_time` and `parking_duration_minutes` are supplied, the supplied `departure_time` is used.
 
 The departure time must be later than the arrival time.
 
-`parking_duration_minutes` must be greater than zero and cannot exceed 7 days.
+`parking_duration_minutes` must:
 
-### Destination Location
+- be greater than zero; and
+- not exceed 7 days.
 
-When the user selects one of several matching destinations, the selected coordinates may be resubmitted as:
+The search endpoint also rejects arrival times that are more than approximately 15 minutes in the past.
+
+---
+
+## 4.3 Destination Location
+
+When multiple destinations match the entered address, the frontend allows the Driver to select the intended destination.
+
+The selected coordinates may then be resubmitted:
 
 ```json
 {
@@ -175,16 +210,18 @@ When the user selects one of several matching destinations, the selected coordin
 }
 ```
 
-When `destination_location` is supplied, the backend uses those coordinates rather than geocoding the address again.
+When `destination_location` is supplied, the backend uses those coordinates instead of geocoding the destination again.
 
-### Preference Fields
+---
+
+## 4.4 Preference Fields
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `priority_ranking` | array of strings | No | Ranking factors in priority order |
 | `lot_type` | string | No | Required vehicle lot type |
 | `vehicle_height_m` | number or null | No | Vehicle height used for gantry-height filtering |
-| `carpark_types` | array of strings | No | Allowed carpark types; empty means any type |
+| `carpark_types` | array of strings | No | Preferred/allowed carpark types; an empty array means any type |
 | `ev_required` | boolean | No | Whether known EV charging support is required |
 
 Default ranking priorities are:
@@ -202,7 +239,8 @@ Supported ranking factors are:
 - `PRICE`
 - `WALKING_TIME`
 - `AVAILABILITY`
-- `EV_CHARGING`
+
+EV charging is a filtering requirement and is not a ranking factor.
 
 Supported lot types are:
 
@@ -210,16 +248,61 @@ Supported lot types are:
 - `MOTORCYCLE`
 - `HEAVY_VEHICLE`
 
-The backend also normalises the following ranking aliases:
+The backend normalises the following ranking aliases:
 
 | Alias | Normalised value |
 |---|---|
 | `COST` | `PRICE` |
 | `DISTANCE` | `WALKING_TIME` |
 | `WALKING` | `WALKING_TIME` |
-| `EV` | `EV_CHARGING` |
 
-### Successful Response
+Duplicate ranking factors are removed while preserving the first occurrence.
+
+---
+
+## 4.5 Filtering Behaviour
+
+Before ranking, the backend filters the candidate carparks according to the supplied preferences.
+
+### Search Radius
+
+Only supported carparks within 1000 m straight-line distance of the destination are considered.
+
+### Carpark Type
+
+If `carpark_types` is non-empty, only matching carpark types are considered.
+
+If it is empty, all supported carpark types are allowed.
+
+### EV Charging
+
+If:
+
+```json
+{
+  "ev_required": true
+}
+```
+
+only carparks with known EV charging support are considered.
+
+### Lot Type
+
+Carparks known not to support the selected lot type are excluded.
+
+URA carparks are represented by vehicle category. A URA carpark with no parking-rate rules for the selected lot type is treated as not supporting that lot type.
+
+### Vehicle Height
+
+If `vehicle_height_m` is supplied:
+
+- carparks with a known gantry height lower than the vehicle height are excluded;
+- non-URA carparks with unknown gantry height remain eligible and are marked using `height_unknown: true`;
+- URA parking locations do not use the HDB-style gantry-height warning.
+
+---
+
+## 4.6 Successful Response
 
 **HTTP Status: `200 OK`**
 
@@ -249,15 +332,16 @@ The backend also normalises the following ranking aliases:
         "short_term_parking": "WHOLE_DAY",
         "has_ev_charging": true
       },
-      "straight_line_m": 350.4,
+      "straight_line_m": 350,
       "walking_distance_m": 420,
       "walking_time_min": 6.0,
+      "walking_time_estimated": false,
       "estimated_fee_sgd": 3.60,
       "availability": {
         "available_lots": 47,
         "total_lots": 100,
         "occupancy_pct": 53,
-        "last_updated": "2026-10-09T13:58:00+08:00",
+        "last_updated": "2026-11-10T13:58:00+08:00",
         "is_stale": false
       },
       "expected_busyness": {
@@ -277,33 +361,82 @@ The backend also normalises the following ranking aliases:
 }
 ```
 
-The `results` array is ordered from the highest-ranked to the lowest-ranked carpark.
+---
 
-### Search Result Fields
+## 4.7 Search Result Fields
 
 | Field | Type | Description |
 |---|---|---|
-| `rank` | integer | Final recommendation position |
+| `rank` | integer | Final display position |
 | `carpark` | object | Normalised carpark information |
 | `straight_line_m` | number or null | Straight-line distance from the carpark to the destination |
 | `walking_distance_m` | integer or null | Walking distance returned by OneMap |
-| `walking_time_min` | number or null | Estimated walking time to the destination |
+| `walking_time_min` | number or null | Walking time returned by OneMap |
+| `walking_time_estimated` | boolean | Whether the walking time is an approximate value rather than a verified OneMap route |
 | `estimated_fee_sgd` | number or null | Estimated parking fee for the requested parking period |
-| `availability` | object or null | Current live parking availability |
+| `availability` | object or null | Latest stored parking availability |
 | `expected_busyness` | object or null | Expected busyness at the requested arrival time |
 | `ev_charging` | object | EV charging information |
-| `height_unknown` | boolean | True when vehicle height was supplied but the carpark gantry height is unknown |
-| `composite_score` | number | Score used for recommendation ranking |
+| `height_unknown` | boolean | Whether a supplied vehicle height cannot be checked because the non-URA carpark's gantry height is unknown |
+| `composite_score` | number | Composite suitability score used in ranking |
 
-If no supported carparks are found within the configured 1 km radius, the search response contains an empty `results` array and a message explaining that no carparks were found.
+In the current implementation, verified walking times are obtained only for up to the 20 eligible carparks nearest to the destination.
+
+For eligible carparks without a verified route:
+
+```json
+{
+  "walking_distance_m": null,
+  "walking_time_min": null,
+  "walking_time_estimated": false
+}
+```
+
+These unrouted carparks remain eligible but are placed after all carparks with verified OneMap routes.
+
+The frontend presents them under the **Other nearby carparks** section.
 
 ---
 
-## 5. Multiple Destination Matches
+## 4.8 No Results
 
-Destination resolution is performed as part of `POST /api/v1/search`.
+If no supported carparks exist within the configured search radius:
 
-If OneMap returns several possible destinations and no exact/single result can be selected automatically, the backend returns:
+```json
+{
+  "destination_address": "Example Destination",
+  "destination": {
+    "latitude": 1.3000,
+    "longitude": 103.8000
+  },
+  "results": [],
+  "message": "No carparks found within 1 km of the destination."
+}
+```
+
+If carparks exist within the search radius but all are removed by the selected filters:
+
+```json
+{
+  "destination_address": "Example Destination",
+  "destination": {
+    "latitude": 1.3000,
+    "longitude": 103.8000
+  },
+  "results": [],
+  "message": "No carparks within 1 km satisfy the selected requirements."
+}
+```
+
+---
+
+# 5. Multiple Destination Matches
+
+Destination resolution occurs as part of:
+
+`POST /api/v1/search`
+
+If OneMap returns several possible destinations and no exact/single result can be automatically selected, the backend returns:
 
 **HTTP Status: `409 Conflict`**
 
@@ -323,13 +456,48 @@ If OneMap returns several possible destinations and no exact/single result can b
 }
 ```
 
-The frontend displays the possible matches to the user.
+The frontend displays the possible matches to the Driver.
 
-After the user selects one, the frontend resubmits the search request with `destination_location` containing the selected coordinates.
+After the Driver selects one, the search request is resubmitted with the selected `destination_location`.
 
 ---
 
-## 6. Live Availability
+# 6. Ranking
+
+The ranking engine uses the following three factors:
+
+- parking price;
+- verified OneMap walking time; and
+- parking availability.
+
+Ranking priority is determined by `priority_ranking`.
+
+The first configured priority receives the greatest weight, followed by progressively smaller weights for lower-priority factors.
+
+A factor that is unavailable for a particular carpark is omitted from that carpark's weighted average rather than being treated as zero.
+
+### Availability Ranking
+
+For availability ranking:
+
+1. expected busyness at the user's arrival time is preferred when available;
+2. otherwise current occupancy percentage is used;
+3. if total lot capacity is unavailable, current available-lot count is used as a fallback.
+
+### Tie-Breaking
+
+For routed carparks with equal suitability scores:
+
+1. shorter verified walking time is preferred;
+2. if still tied, lower estimated parking fee is preferred.
+
+Carparks without verified OneMap routes are always displayed after routed carparks.
+
+Among unrouted carparks, the composite score is considered first and straight-line distance is used as an additional ordering factor.
+
+---
+
+# 7. Live Availability
 
 Live availability uses the following format:
 
@@ -338,14 +506,24 @@ Live availability uses the following format:
   "available_lots": 47,
   "total_lots": 100,
   "occupancy_pct": 53,
-  "last_updated": "2026-10-09T13:58:00+08:00",
+  "last_updated": "2026-11-10T13:58:00+08:00",
   "is_stale": false
 }
 ```
 
+Fields:
+
+| Field | Description |
+|---|---|
+| `available_lots` | Current number of available lots |
+| `total_lots` | Total lots where known |
+| `occupancy_pct` | Calculated occupancy percentage where total capacity is known |
+| `last_updated` | Timestamp of the stored reading |
+| `is_stale` | Whether the reading is older than 15 minutes |
+
 `total_lots` and `occupancy_pct` may be `null` when the source does not provide enough information.
 
-If live availability information is unavailable, the search result contains:
+If current availability is unavailable:
 
 ```json
 {
@@ -353,21 +531,27 @@ If live availability information is unavailable, the search result contains:
 }
 ```
 
-`available_lots: 0` represents a carpark with no currently available lots and must not be used to represent missing data.
+`available_lots: 0` means that there are currently no available lots.
 
-Availability older than the configured freshness threshold is marked using:
+Availability information is obtained from the latest readings stored in MySQL rather than by calling the external availability source during each user search.
 
-```json
-{
-  "is_stale": true
-}
-```
+The background collector normally refreshes supported availability information every 10 minutes.
 
 ---
 
-## 7. Expected Busyness
+# 8. Expected Busyness
 
-Expected busyness is calculated from historical availability data for the user's intended arrival time.
+Expected busyness is derived from stored historical parking availability.
+
+For the requested arrival time, the backend retrieves historical records:
+
+- for the same carpark;
+- for the selected lot type;
+- on the same weekday;
+- around the same 15-minute time slot; and
+- from the previous 56 days (8 weeks).
+
+At least 3 usable historical observations are required.
 
 The response format is:
 
@@ -379,13 +563,27 @@ The response format is:
 }
 ```
 
-The allowed busyness levels are:
+Fields:
+
+| Field | Description |
+|---|---|
+| `occupancy_pct` | Average historical occupancy percentage |
+| `level` | Simplified busyness classification |
+| `sample_count` | Number of historical records used |
+
+Busyness levels are:
 
 - `LOW`
 - `MODERATE`
 - `HIGH`
 
-If there is insufficient historical information to generate an estimate:
+The current classification thresholds are:
+
+- `LOW`: occupancy ≤ 70%
+- `MODERATE`: occupancy > 70% and ≤ 90%
+- `HIGH`: occupancy > 90%
+
+If fewer than 3 usable historical observations are available:
 
 ```json
 {
@@ -393,15 +591,15 @@ If there is insufficient historical information to generate an estimate:
 }
 ```
 
-Expected busyness is an estimate based on historical availability and does not guarantee actual future availability.
+Expected busyness represents typical historical conditions and is not a formal prediction or guarantee of future parking availability.
 
 ---
 
-## 8. EV Charging
+# 9. EV Charging
 
 EV charging information is attached to each search result.
 
-The current shared response model is:
+The response format is:
 
 ```json
 {
@@ -410,7 +608,16 @@ The current shared response model is:
 }
 ```
 
-If a carpark is known not to support EV charging:
+### Known EV Support
+
+```json
+{
+  "supported": true,
+  "available_chargers": 2
+}
+```
+
+### Known No EV Support
 
 ```json
 {
@@ -419,7 +626,7 @@ If a carpark is known not to support EV charging:
 }
 ```
 
-If EV charging support cannot be reliably determined:
+### Unknown EV Information
 
 ```json
 {
@@ -428,19 +635,42 @@ If EV charging support cannot be reliably determined:
 }
 ```
 
-When `ev_required` is `true`, the search applies the EV charging requirement to candidate carparks.
+EV stations obtained from LTA DataMall are associated with carparks using proximity matching.
 
-The EV integration may be extended with additional charging information such as total charger count or connector types. If the shared backend response schema is extended, this section must be updated accordingly.
+A station is matched to a carpark when it lies within the configured 75 m matching radius.
+
+EV station data is refreshed periodically in the background.
+
+The scheduled refresh interval is approximately one hour.
+
+If the current process has a sufficiently fresh EV feed, `available_chargers` may contain the aggregated number of available charging points from nearby matched EV stations.
+
+If the live EV feed is unavailable or more than approximately one hour old:
+
+- stored EV support information may still be used; but
+- `available_chargers` is returned as `null`.
+
+When:
+
+```json
+{
+  "ev_required": true
+}
+```
+
+only carparks with known EV charging support are considered eligible.
+
+EV charging is not included in the composite ranking score.
 
 ---
 
-## 9. Carpark Information
+# 10. Carpark Information
 
-### GET `/api/v1/carparks/{carpark_id}`
+## GET `/api/v1/carparks/{carpark_id}`
 
 Returns the stored information for a selected carpark.
 
-Example request:
+Example:
 
 `GET /api/v1/carparks/CARPARK_001`
 
@@ -467,23 +697,37 @@ Example request:
 }
 ```
 
-If the carpark does not exist, the endpoint returns `404 Not Found`.
+Fields may be `null` where the corresponding source information is unavailable.
+
+If the carpark does not exist:
+
+**HTTP Status: `404 Not Found`**
+
+```json
+{
+  "detail": "Carpark 'CARPARK_001' not found"
+}
+```
 
 ---
 
-## 10. Carpark Availability Endpoint
+# 11. Carpark Availability Endpoint
 
-### GET `/api/v1/carparks/{carpark_id}/availability`
+## GET `/api/v1/carparks/{carpark_id}/availability`
 
-Returns current availability for a selected carpark and lot type.
+Returns the latest stored availability for a selected carpark and lot type.
 
-The optional query parameter is:
+### Query Parameters
 
-`lot_type`
+| Parameter | Required | Description |
+|---|---|---|
+| `lot_type` | No | Lot type to retrieve; defaults to `CAR` |
 
-The default value is:
+Supported values are:
 
-`CAR`
+- `CAR`
+- `MOTORCYCLE`
+- `HEAVY_VEHICLE`
 
 Example:
 
@@ -498,37 +742,39 @@ Example:
   "available_lots": 47,
   "total_lots": 100,
   "occupancy_pct": 53,
-  "last_updated": "2026-10-09T13:58:00+08:00",
+  "last_updated": "2026-11-10T13:58:00+08:00",
   "is_stale": false
 }
 ```
 
-If the carpark exists but no current availability is available, the endpoint returns:
+If the carpark exists but no availability reading exists:
 
 ```json
 null
 ```
 
-If the carpark does not exist, the endpoint returns `404 Not Found`.
+If the carpark does not exist:
+
+**HTTP Status: `404 Not Found`**
 
 ---
 
-## 11. Expected Busyness Endpoint
+# 12. Expected Busyness Endpoint
 
-### GET `/api/v1/carparks/{carpark_id}/expected-busyness`
+## GET `/api/v1/carparks/{carpark_id}/expected-busyness`
 
-Returns the expected busyness of a selected carpark based on historical availability.
+Returns the expected busyness for a selected carpark based on historical availability.
 
-Supported query parameters are:
+### Query Parameters
 
 | Parameter | Required | Description |
 |---|---|---|
 | `lot_type` | No | Lot type to estimate; defaults to `CAR` |
-| `at` | No | Arrival time in ISO 8601 format; defaults to the current Singapore time |
+| `at` | No | Arrival date/time in ISO 8601 format; defaults to current Singapore time |
 
 Example:
 
-`GET /api/v1/carparks/CARPARK_001/expected-busyness?lot_type=CAR&at=2026-10-09T14:00:00%2B08:00`
+`GET /api/v1/carparks/CARPARK_001/expected-busyness?lot_type=CAR&at=2026-11-10T14:00:00%2B08:00`
 
 ### Successful Response
 
@@ -542,21 +788,23 @@ Example:
 }
 ```
 
-If insufficient historical information exists, the endpoint returns:
+If insufficient historical information exists:
 
 ```json
 null
 ```
 
-If the carpark does not exist, the endpoint returns `404 Not Found`.
+If the carpark does not exist:
+
+**HTTP Status: `404 Not Found`**
 
 ---
 
-## 12. Health Check
+# 13. Health Check
 
-### GET `/health`
+## GET `/health`
 
-Used to verify that the backend application is running.
+Used to verify that the FastAPI backend is running.
 
 ### Successful Response
 
@@ -570,23 +818,27 @@ Used to verify that the backend application is running.
 
 ---
 
-## 13. Error Handling
+# 14. Error Handling
 
-### Invalid Destination
+## 14.1 Invalid Destination
 
-If OneMap cannot resolve the destination:
+If OneMap cannot resolve the entered destination:
 
 **HTTP Status: `404 Not Found`**
 
+Example:
+
 ```json
 {
-  "detail": "No OneMap result for 'Example Destination'"
+  "detail": "Destination 'Example Destination' could not be found."
 }
 ```
 
-### Multiple Destinations
+---
 
-If several destinations match:
+## 14.2 Multiple Destinations
+
+If several places match the destination:
 
 **HTTP Status: `409 Conflict`**
 
@@ -606,17 +858,48 @@ If several destinations match:
 }
 ```
 
-### Invalid Request
+---
 
-If request data fails Pydantic validation, such as when the departure time is before the arrival time:
+## 14.3 Invalid Search Request
+
+If request data fails schema validation:
 
 **HTTP Status: `422 Unprocessable Entity`**
 
-FastAPI returns validation information in the `detail` field.
+Examples include:
 
-### External API Failure
+- blank destination;
+- missing both parking duration and departure time;
+- non-positive parking duration;
+- parking duration longer than 7 days;
+- departure time not later than arrival time;
+- unsupported lot type;
+- unsupported ranking factor;
+- invalid vehicle height.
 
-If an external API such as OneMap, HDB/data.gov.sg, or LTA cannot provide the required data:
+FastAPI returns validation details in the `detail` field.
+
+---
+
+## 14.4 Arrival Time in the Past
+
+The search endpoint performs an additional server-side check.
+
+If the intended arrival is more than approximately 15 minutes in the past:
+
+**HTTP Status: `422 Unprocessable Entity`**
+
+```json
+{
+  "detail": "Arrival time can't be in the past."
+}
+```
+
+---
+
+## 14.5 External API Failure
+
+If an external API fails during an operation that requires it:
 
 **HTTP Status: `502 Bad Gateway`**
 
@@ -626,11 +909,17 @@ If an external API such as OneMap, HDB/data.gov.sg, or LTA cannot provide the re
 }
 ```
 
-### Carpark Not Found
+External API failures that occur during background collection may instead be logged and retried at a later scheduled collection cycle so that previously stored information remains usable.
+
+---
+
+## 14.6 Carpark Not Found
 
 If a requested carpark does not exist:
 
 **HTTP Status: `404 Not Found`**
+
+Example:
 
 ```json
 {
@@ -640,24 +929,78 @@ If a requested carpark does not exist:
 
 ---
 
-## 14. Internal Service Interfaces
+# 15. External Data Interfaces
 
-The frontend communicates with the backend through the REST endpoints defined above.
+The backend integrates with the following external services.
 
-Internal backend operations are implemented as service and repository interfaces and are not exposed as separate frontend API endpoints.
+## OneMap
 
-These include:
+Used for:
 
-- destination geocoding and OneMap destination matching
-- candidate carpark retrieval and filtering
-- walking time and distance estimation
-- parking fee calculation
-- live availability retrieval
-- expected busyness estimation
-- EV charging retrieval and carpark association
-- recommendation and ranking
-- historical availability collection
+- destination geocoding;
+- multiple-destination matching; and
+- walking route distance and duration.
 
-The Historical Availability Collector periodically retrieves supported live availability data and stores historical records in MySQL.
+Walking routes are cached by the backend for approximately one hour.
 
-Therefore, separate public endpoints such as `/api/v1/predict`, `/api/v1/calculate-fee`, or `/api/v1/historical-availability` are not required.
+## HDB / data.gov.sg
+
+Used for:
+
+- HDB carpark static information; and
+- HDB carpark availability.
+
+Availability readings are stored in MySQL by the background collector.
+
+## URA Data Service
+
+Used for supported URA:
+
+- carpark / parking-lot information;
+- parking availability; and
+- parking-rate information.
+
+URA support depends on valid URA API credentials being configured.
+
+## LTA DataMall
+
+Used for EV charging station information.
+
+EV stations are matched to carparks using the configured 75 m proximity threshold.
+
+---
+
+# 16. Internal Backend Processing
+
+The frontend communicates with the backend only through the REST endpoints defined in this document.
+
+The following operations are internal backend responsibilities and are not exposed as separate public frontend endpoints:
+
+- destination geocoding;
+- search validation;
+- nearby-carpark retrieval;
+- lot-type filtering;
+- vehicle-height filtering;
+- carpark-type filtering;
+- EV-required filtering;
+- walking-route retrieval;
+- parking-fee calculation;
+- live availability retrieval;
+- expected busyness estimation;
+- EV station association;
+- recommendation scoring;
+- ranking and tie-breaking;
+- HDB/URA availability collection;
+- HDB historical availability backfill;
+- carpark information refresh; and
+- EV data refresh.
+
+The current background processes persist the relevant carpark, rate and availability information in MySQL so that user searches do not need to call every external API synchronously.
+
+Separate public endpoints such as:
+
+- `/api/v1/calculate-fee`
+- `/api/v1/predict`
+- `/api/v1/historical-availability`
+
+are therefore not required.
