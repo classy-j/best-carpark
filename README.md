@@ -10,6 +10,12 @@ arrival time, carpark type, and EV charging.
 Built by a team of five for **SC2006 Software Engineering** at Nanyang Technological University
 (AY2026/27), using Singapore government open data.
 
+## Demo
+
+[![Best Carpark demo video](https://img.youtube.com/vi/MD-oEodFP5Y/hqdefault.jpg)](https://youtu.be/MD-oEodFP5Y)
+
+▶ [Watch the demo on YouTube](https://youtu.be/MD-oEodFP5Y)
+
 ## Features
 
 - **Fee estimation** from HDB and URA published rate rules, including night caps, daily caps,
