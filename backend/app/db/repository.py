@@ -178,7 +178,9 @@ def _history_filter(carpark_id: str, lot_type: LotType, at: datetime,
     at_sgt = at.astimezone(SGT) if at.tzinfo else at
     centre = slot_15m(at_sgt)
     slots = sorted({(centre + k) % SLOTS_PER_DAY for k in range(-window_slots, window_slots + 1)})
-    since = to_db_time(datetime.now(SGT) - timedelta(days=lookback_days))
+    # Anchor the lookback on the arrival time, not the wall clock, so results are
+    # reproducible and a future arrival still sees the most recent weeks of history.
+    since = to_db_time(at_sgt - timedelta(days=lookback_days))
     h = AvailabilityHistory
     return [h.carpark_id == carpark_id, h.lot_type == lot_type,
             h.day_of_week == mysql_day_of_week(at_sgt), h.slot_15m.in_(slots),
